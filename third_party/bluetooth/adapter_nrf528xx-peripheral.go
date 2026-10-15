@@ -1,0 +1,150 @@
+//go:build softdevice && s113v7
+
+package bluetooth
+
+// This file implements the event handler for SoftDevices with only peripheral
+// mode support. This includes the S113.
+
+/*
+#include "nrf_sdm.h"
+#include "nrf_nvic.h"
+#include "ble.h"
+#include "ble_gap.h"
+*/
+import "C"
+
+import (
+	"unsafe"
+)
+
+func handleEvent() {
+	id := eventBuf.header.evt_id
+	switch {
+	case id >= C.BLE_GAP_EVT_BASE && id <= C.BLE_GAP_EVT_LAST:
+		gapEvent := eventBuf.evt.unionfield_gap_evt()
+		switch id {
+		case C.BLE_GAP_EVT_CONNECTED:
+			if debug {
+				println("evt: connected in peripheral role")
+			}
+			secOnConnect()
+			currentConnection.handle.Reg = uint16(gapEvent.conn_handle)
+			connectEvent := gapEvent.params.unionfield_connected()
+			device := Device{
+				Address:          Address{makeMACAddress(connectEvent.peer_addr)},
+				connectionHandle: gapEvent.conn_handle,
+			}
+			DefaultAdapter.connectHandler(device, true)
+		case C.BLE_GAP_EVT_DISCONNECTED:
+			if debug {
+				println("evt: disconnected, reason", gapEvent.params.unionfield_disconnected().reason)
+			}
+			secOnDisconnect(gapEvent.conn_handle)
+			currentConnection.handle.Reg = C.BLE_CONN_HANDLE_INVALID
+			// Auto-restart advertisement if needed.
+			if defaultAdvertisement.isAdvertising.Get() != 0 {
+				// The advertisement was running but was automatically stopped
+				// by the connection event.
+				// Note that it cannot be restarted during connect like this,
+				// because it would need to be reconfigured as a non-connectable
+				// advertisement. That's left as a future addition, if
+				// necessary.
+				C.sd_ble_gap_adv_start(defaultAdvertisement.handle, C.BLE_CONN_CFG_TAG_DEFAULT)
+			}
+			device := Device{
+				connectionHandle: gapEvent.conn_handle,
+			}
+			DefaultAdapter.connectHandler(device, false)
+		case C.BLE_GAP_EVT_DATA_LENGTH_UPDATE_REQUEST:
+			// We need to respond with sd_ble_gap_data_length_update. Setting
+			// both parameters to nil will make sure we send the default values.
+			C.sd_ble_gap_data_length_update(gapEvent.conn_handle, nil, nil)
+		case C.BLE_GAP_EVT_DATA_LENGTH_UPDATE:
+			// ignore confirmation of data length successfully updated
+		case C.BLE_GAP_EVT_PHY_UPDATE_REQUEST:
+			// Tell the Bluetooth stack to update the PHY as it sees fit.
+			C.sd_ble_gap_phy_update(gapEvent.conn_handle, &phyUpdateResponse)
+		case C.BLE_GAP_EVT_PHY_UPDATE:
+			// ignore confirmation of phy successfully updated
+		case C.BLE_GAP_EVT_SEC_PARAMS_REQUEST:
+			if debug {
+				println("evt: gap security parameters request")
+			}
+			secOnSecParamsRequest(gapEvent.conn_handle)
+		case C.BLE_GAP_EVT_SEC_INFO_REQUEST:
+			if debug {
+				println("evt: gap security info request")
+			}
+			secOnSecInfoRequest(gapEvent.conn_handle, gapEvent.params.unionfield_sec_info_request())
+		case C.BLE_GAP_EVT_PASSKEY_DISPLAY:
+			if debug {
+				println("evt: gap passkey display")
+			}
+			secOnPasskeyDisplay(gapEvent.conn_handle, gapEvent.params.unionfield_passkey_display())
+		case C.BLE_GAP_EVT_AUTH_KEY_REQUEST:
+			if debug {
+				println("evt: gap auth key request")
+			}
+			secOnAuthKeyRequest(gapEvent.conn_handle)
+		case C.BLE_GAP_EVT_LESC_DHKEY_REQUEST:
+			if debug {
+				println("evt: gap lesc dhkey request")
+			}
+			secOnLESCDHKeyRequest(gapEvent.conn_handle)
+		case C.BLE_GAP_EVT_CONN_SEC_UPDATE:
+			if debug {
+				connSec := gapEvent.params.unionfield_conn_sec_update().conn_sec
+				println("evt: gap connection security update, mode", connSec.sec_mode.bitfield_sm(), "level", connSec.sec_mode.bitfield_lv())
+			}
+			secOnConnSecUpdate(gapEvent.conn_handle)
+		case C.BLE_GAP_EVT_AUTH_STATUS:
+			if debug {
+				println("evt: gap auth status:", gapEvent.params.unionfield_auth_status().auth_status)
+			}
+			secOnAuthStatus(gapEvent.conn_handle, gapEvent.params.unionfield_auth_status())
+		default:
+			if debug {
+				println("unknown GAP event:", id)
+			}
+		}
+	case id >= C.BLE_GATTS_EVT_BASE && id <= C.BLE_GATTS_EVT_LAST:
+		gattsEvent := eventBuf.evt.unionfield_gatts_evt()
+		switch id {
+		case C.BLE_GATTS_EVT_WRITE:
+			writeEvent := gattsEvent.params.unionfield_write()
+			len := writeEvent.len - writeEvent.offset
+			data := (*[255]byte)(unsafe.Pointer(&writeEvent.data[0]))[:len:len]
+			handler := DefaultAdapter.getCharWriteHandler(writeEvent.handle)
+			if handler != nil {
+				handler.callback(Connection(gattsEvent.conn_handle), int(writeEvent.offset), data)
+			}
+			// The write may have changed a CCCD, which a bonded central
+			// expects to persist across reconnections.
+			secSaveSysAttrs(gattsEvent.conn_handle)
+		case C.BLE_GATTS_EVT_SYS_ATTR_MISSING:
+			// This event is generated when reading the Generic Attribute
+			// service. It appears to be necessary for bonded devices.
+			// From the docs:
+			// > If the pointer is NULL, the system attribute info is
+			// > initialized, assuming that the application does not have any
+			// > previously saved system attribute data for this device.
+			// If the connected central is bonded with us, its saved CCCD
+			// state is restored instead of being initialized.
+			secOnSysAttrMissing(gattsEvent.conn_handle)
+		case C.BLE_GATTS_EVT_EXCHANGE_MTU_REQUEST:
+			// This event is generated by some devices. While we could support
+			// larger MTUs, this default MTU is supported everywhere.
+			C.sd_ble_gatts_exchange_mtu_reply(gattsEvent.conn_handle, C.BLE_GATT_ATT_MTU_DEFAULT)
+		case C.BLE_GATTS_EVT_HVN_TX_COMPLETE:
+			// ignore confirmation of a notification successfully sent
+		default:
+			if debug {
+				println("unknown GATTS event:", id, id-C.BLE_GATTS_EVT_BASE)
+			}
+		}
+	default:
+		if debug {
+			println("unknown event:", id)
+		}
+	}
+}
