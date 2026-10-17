@@ -30,3 +30,6 @@
 *.bak
 
 
+
+/cmd/portable/payload.zip
+/cmd/portable/resources_windows_amd64.syso

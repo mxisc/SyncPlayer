@@ -15,4 +15,4 @@ Whisper.cpp 的 CPU 后端 DLL 应与 `whisper-cli.exe` 放在同一目录。将
 
 分发时保留各组件随附的许可证和版权说明。Whisper.cpp 使用 MIT 许可证；模型许可证见 [Whisper LICENSE](https://github.com/openai/whisper/blob/main/LICENSE)。FFmpeg 与 MPV 按所使用构建的许可证要求分发。
 
-运行程序不需要安装 Go、Node.js 或 Python。Windows WebView2 和组件所需的 Microsoft Visual C++ Runtime 需在目标电脑上安装。
+单文件发行版内置以上组件及 Whisper 所需的 x64 Visual C++ 运行库，首次启动自动释放。运行不需要安装 Go、Node.js 或 Python；目标电脑需有 Windows WebView2 Runtime。

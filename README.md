@@ -14,7 +14,9 @@ Windows 视频与 Funscript 播放器，支持本地播放、DeoVR Classic 远�
 
 需要 Windows x64、WebView2 Runtime；使用蓝牙连接时，电脑需要可用的蓝牙适配器。
 
-使用完整运行目录启动 `build/bin/SyncPlayer.exe`，保留 `build/bin` 与 `runtime` 的相对位置。源码仓库不包含播放器运行依赖和语音模型，源码构建请参见下文。
+从 [Releases](https://github.com/mxisc/SyncPlayer/releases/latest) 下载 `SyncPlayer-1.0.0-windows-x64.exe`，双击启动，无需手动解压或安装运行组件。首次启动会将内置组件释放到 `%LOCALAPPDATA%\SyncPlayer\1.0.0`，之后直接复用；设置与缓存也保存在该目录中。
+
+源码仓库不包含播放器运行依赖和语音模型，源码构建请参见下文。
 
 ### 本地播放
 
@@ -74,4 +76,4 @@ Movies/
 ./package.ps1
 ```
 
-输出位于 `dist/`，包含程序及运行依赖，不包含个人设置、密钥、日志或字幕缓存。
+输出为 `dist/SyncPlayer-1.0.0-windows-x64.exe`，内置必要运行依赖和语音模型，不包含个人设置、密钥、日志或字幕缓存。
