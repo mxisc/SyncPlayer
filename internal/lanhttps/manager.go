@@ -92,9 +92,6 @@ func validate(s Settings) error {
 // Configure preserves existing account and certificate data for the same domain.
 func Configure(dir string, s Settings) (*Manager, error) {
 	s.Domain = strings.ToLower(strings.TrimSpace(s.Domain))
-	if err := validate(s); err != nil {
-		return nil, err
-	}
 	m, err := Open(dir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -103,15 +100,31 @@ func Configure(dir string, s Settings) (*Manager, error) {
 		m = &Manager{dir: dir}
 	}
 	if m.settings.Domain == s.Domain {
-		m.settings.ID = s.ID
-		m.settings.Token = s.Token
+		if s.ID != "" {
+			m.settings.ID = s.ID
+		}
+		if s.Token != "" {
+			m.settings.Token = s.Token
+		}
 	} else {
 		m.settings = s
+	}
+	if err := validate(m.settings); err != nil {
+		return nil, err
 	}
 	return m, m.save()
 }
 
 func (m *Manager) Domain() string { return m.settings.Domain }
+
+// Credentials is used only by the explicit credential reveal action.
+func (m *Manager) Credentials() (string, string) { return m.settings.ID, m.settings.Token }
+
+// CertificateReady checks the cached certificate without requesting or renewing it.
+func (m *Manager) CertificateReady() bool {
+	c, err := m.loadCertificate()
+	return err == nil && time.Now().After(c.Leaf.NotBefore) && time.Now().Before(c.Leaf.NotAfter)
+}
 
 func (m *Manager) save() error {
 	data, err := json.Marshal(m.settings)

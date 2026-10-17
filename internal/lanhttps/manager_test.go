@@ -20,6 +20,19 @@ func TestProtectedConfigurationAndCachedCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if m.CertificateReady() {
+		t.Fatal("configuration without certificate reported ready")
+	}
+	m, err = Configure(dir, Settings{Domain: "lan.example.com", ID: "updated-id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, token := m.Credentials(); id != "updated-id" || token != "test-secret-token" {
+		t.Fatal("saving masked credentials did not preserve token")
+	}
+	if _, err := Configure(dir, Settings{Domain: "other.example.com", ID: "updated-id"}); err == nil {
+		t.Fatal("credentials reused for a different domain")
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
@@ -55,11 +68,17 @@ func TestProtectedConfigurationAndCachedCertificate(t *testing.T) {
 	if !m.HasValidCertificate() {
 		t.Fatal("cached certificate not loaded")
 	}
+	if !m.CertificateReady() {
+		t.Fatal("valid cached certificate not reported ready")
+	}
 	c, err := m.TLSConfig().GetCertificate(nil)
 	if err != nil || c.Leaf.VerifyHostname("lan.example.com") != nil {
 		t.Fatal("TLS certificate unavailable")
 	}
 	m.settings.Domain = "other.example.com"
+	if m.CertificateReady() {
+		t.Fatal("mismatched certificate reported ready")
+	}
 	if _, err = m.loadCertificate(); err == nil {
 		t.Fatal("certificate hostname mismatch accepted")
 	}
