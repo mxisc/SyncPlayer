@@ -600,6 +600,8 @@ func (a *App) PlaybackFullscreen(full bool) {
 	}
 }
 
+func (a *App) PlaybackCursorHidden(hidden bool) { a.player.CursorHidden(hidden) }
+
 func (a *App) StartSubtitles(key, language string, position int64, lowSpeech bool) error {
 	if a.isDeo() {
 		return errors.New("DeoVR 模式暂不支持实时翻译字幕")

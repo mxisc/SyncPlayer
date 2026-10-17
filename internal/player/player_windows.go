@@ -30,21 +30,23 @@ type State struct {
 	Message   string  `json:"message"`
 }
 type Player struct {
-	mu       sync.Mutex
-	write    sync.Mutex
-	start    sync.Mutex
-	conn     net.Conn
-	cmd      *exec.Cmd
-	child    uintptr
-	visible  bool
-	state    State
-	done     chan struct{}
-	root     string
-	subtitle string
-	ui       chan func()
-	request  int
-	pending  chan string
-	subMu    sync.Mutex
+	mu           sync.Mutex
+	write        sync.Mutex
+	start        sync.Mutex
+	conn         net.Conn
+	cmd          *exec.Cmd
+	child        uintptr
+	cursorProc   uintptr
+	cursorHidden bool // Only accessed on the native UI thread.
+	visible      bool
+	state        State
+	done         chan struct{}
+	root         string
+	subtitle     string
+	ui           chan func()
+	request      int
+	pending      chan string
+	subMu        sync.Mutex
 }
 
 var user = syscall.NewLazyDLL("user32.dll")
@@ -142,6 +144,9 @@ func (p *Player) layout(x, y, w, h, viewport, overlay float64) error {
 		if p.child == 0 {
 			return errors.New("无法创建视频区域")
 		}
+		if err := p.installCursorHandler(); err != nil {
+			return err
+		}
 	}
 	flags := uintptr(0x0010) // Keep focus; HWND_TOP places video above the WebView.
 	if p.visible {
@@ -193,7 +198,7 @@ func (p *Player) ensure() error {
 		return errors.New("缺少 mpv 播放内核")
 	}
 	pipe := fmt.Sprintf(`\\.\pipe\syncplayer-mpv-%d-%d`, os.Getpid(), time.Now().UnixNano())
-	cmd := exec.Command(binary, "--no-config", "--idle=yes", "--keep-open=yes", "--force-window=yes", "--pause=yes", "--terminal=no", "--osc=no", "--input-default-bindings=no", "--input-vo-keyboard=no", "--hwdec=auto-safe", "--vo=gpu", "--gpu-api=d3d11", "--gpu-context=d3d11", fmt.Sprintf("--wid=%d", uint32(child)), "--input-ipc-server="+pipe)
+	cmd := exec.Command(binary, "--no-config", "--idle=yes", "--keep-open=yes", "--force-window=yes", "--pause=yes", "--terminal=no", "--osc=no", "--cursor-autohide=no", "--input-default-bindings=no", "--input-vo-keyboard=no", "--hwdec=auto-safe", "--vo=gpu", "--gpu-api=d3d11", "--gpu-context=d3d11", fmt.Sprintf("--wid=%d", uint32(child)), "--input-ipc-server="+pipe)
 	cmd.Args = append(cmd.Args, "--sub-font=Microsoft YaHei", "--sub-font-size=36", "--sub-color=#F1F4FA", "--sub-border-color=#101722", "--sub-border-size=1.5", "--sub-shadow-offset=1", "--sub-margin-y=36")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if e := cmd.Start(); e != nil {
@@ -281,6 +286,21 @@ func (p *Player) Load(path string) error {
 	return p.Command("loadfile", path, "replace")
 }
 func (p *Player) Snapshot() State { p.mu.Lock(); defer p.mu.Unlock(); return p.state }
+
+// OwnsWindow includes mpv's cross-process render window embedded in our host.
+func (p *Player) OwnsWindow(window uintptr) bool {
+	p.mu.Lock()
+	child, visible := p.child, p.visible
+	p.mu.Unlock()
+	if child == 0 || window == 0 || !visible {
+		return false
+	}
+	if window == child {
+		return true
+	}
+	inside, _, _ := user.NewProc("IsChild").Call(child, window)
+	return inside != 0
+}
 func (p *Player) Seek(seconds float64) error {
 	s := p.Snapshot()
 	if s.Duration > 0 {
