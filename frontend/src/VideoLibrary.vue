@@ -2,7 +2,7 @@
 import {ref,computed,onMounted,onBeforeUnmount,watch} from 'vue';
 import HoverText from './HoverText.vue';
 const props=defineProps<{busy:boolean;selected:string;audioAllowed:boolean}>();
-const emit=defineEmits<{select:[id:string];expand:[expanded:boolean]}>();
+const emit=defineEmits<{select:[id:string];expand:[expanded:boolean];queue:[ids:string[]]}>();
 type Entry={id:string;name:string;folder:string;kind:string;has_script:boolean};
 type State={directory:string;items:Entry[];skipped:number;scanning?:boolean;directories?:number;found?:number};
 type API={LibraryState:()=>Promise<State>;ScanLibrary:(choose:boolean)=>Promise<State|null>;CancelLibraryScan:()=>Promise<void>};
@@ -20,6 +20,7 @@ function selectItem(id:string){closeBrowser();emit('select',id)}
 const nameOrder=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const available=computed(()=>items.value.filter(item=>props.audioAllowed||item.kind!=='audio').sort((a,b)=>nameOrder.compare(a.name,b.name)||nameOrder.compare(a.folder,b.folder)));
 const filtered=computed(()=>{const q=query.value.trim().toLocaleLowerCase();return q?available.value.filter(item=>(item.name+' '+item.folder).toLocaleLowerCase().includes(q)):available.value});
+watch(available,entries=>emit('queue',entries.map(entry=>entry.id)),{immediate:true});
 watch([query,available],()=>{limit.value=100;page.value=1});
 function apply(state:State){directory.value=state.directory;items.value=state.items||[];limit.value=100;message.value=state.skipped?`${state.skipped} 个位置无法访问`:''}
 async function scan(choose:boolean){if(scanPending.value)return;scanPending.value=true;scanning.value=false;scannedDirectories.value=0;foundMedia.value=0;message.value='';progressTimer=window.setInterval(()=>readProgress().catch(()=>{}),500);const current=++generation;try{const state=await api().ScanLibrary(choose);if(state&&current===generation)apply(state)}catch(error){if(current===generation)message.value=String(error)}finally{if(current===generation){scanning.value=false;scanPending.value=false;window.clearInterval(progressTimer)}}}
