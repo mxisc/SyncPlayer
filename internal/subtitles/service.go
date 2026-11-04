@@ -40,6 +40,7 @@ type Service struct {
 	profile    storedProfile
 	mu         sync.Mutex
 	root       string
+	dataDir    string
 	path       string
 	key        string
 	language   string
@@ -53,8 +54,8 @@ type Service struct {
 	cachePath  string
 }
 
-func New(root string) *Service {
-	return &Service{root: root, ai: newAIStore(root), state: State{Message: "未开启", Cues: []Cue{}}}
+func New(root, dataDir string) *Service {
+	return &Service{root: root, dataDir: dataDir, ai: newAIStore(dataDir), state: State{Message: "未开启", Cues: []Cue{}}}
 }
 func (s *Service) Stop() {
 	s.mu.Lock()
@@ -115,7 +116,7 @@ func (s *Service) Start(key, language string, position int64, lowSpeech bool) er
 	}
 	fingerprintText := fmt.Sprintf("native-v1|%s|%d|%d|%s|small|%s|%s|%s|json=%t|low=%t", s.path, info.Size(), info.ModTime().UnixNano(), language, profile.Provider, profile.BaseURL, profile.Model, profile.JSONMode, lowSpeech)
 	fingerprint := sha256.Sum256([]byte(fingerprintText))
-	dir := filepath.Join(s.root, "build", "bin", "subtitle-cache")
+	dir := filepath.Join(s.dataDir, "subtitle-cache")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return errors.New("无法创建字幕缓存")
 	}

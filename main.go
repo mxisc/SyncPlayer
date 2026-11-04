@@ -15,12 +15,15 @@ var assets embed.FS
 
 func main() {
 	if e := diagnostics.Init(); e != nil {
-		log.Fatal("无法创建诊断日志：", e)
+		showStartupError(e)
+		return
 	}
 	defer diagnostics.Close()
 	app, e := NewApp()
 	if e != nil {
-		log.Fatal(e)
+		log.Print(e)
+		showStartupError(e)
+		return
 	}
 	defer app.media.Close()
 	if e := wails.Run(&options.App{Title: "SyncPlayer", Width: 1360, Height: 860, MinWidth: 850, MinHeight: 650, AssetServer: &assetserver.Options{Assets: assets}, OnStartup: app.startup, OnShutdown: app.shutdown, Bind: []interface{}{app}, Windows: &windows.Options{
@@ -34,6 +37,7 @@ func main() {
 			DarkModeBorderInactive:    0x434241,
 		},
 	}}); e != nil {
-		log.Fatal(e)
+		log.Print(e)
+		showStartupError(e)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syncplayer/internal/applayout"
 	"syncplayer/internal/deovr"
 	"syncplayer/internal/device"
 	"syncplayer/internal/diagnostics"
@@ -57,8 +58,8 @@ func NewApp() (*App, error) {
 		server.Close()
 		return nil, e
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(exe), "..", ".."))
-	a := &App{device: device.New(), media: server, lastCycle: -1, subtitles: subtitles.New(root), player: player.New(root), playbackMode: "mpv", deoConnectionMode: "remote"}
+	layout := applayout.Resolve(exe)
+	a := &App{device: device.New(), media: server, lastCycle: -1, subtitles: subtitles.New(layout.Root, layout.Data), player: player.New(layout.Root), playbackMode: "mpv", deoConnectionMode: "remote"}
 	a.handy = handy.New()
 	a.deviceMode = "bluetooth"
 	a.library = library.New(filepath.Join(filepath.Dir(exe), "settings", "library.json"))

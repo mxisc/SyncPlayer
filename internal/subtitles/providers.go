@@ -62,8 +62,8 @@ type aiStore struct {
 	loadErr error
 }
 
-func newAIStore(root string) *aiStore {
-	s := &aiStore{path: filepath.Join(root, "build", "bin", "settings", "ai-providers.dat"), legacy: filepath.Join(root, "build", "bin", "settings", "deepseek-key.dat"), data: storedSettings{Selected: "deepseek", Profiles: map[string]storedProfile{}}}
+func newAIStore(dataDir string) *aiStore {
+	s := &aiStore{path: filepath.Join(dataDir, "settings", "ai-providers.dat"), legacy: filepath.Join(dataDir, "settings", "deepseek-key.dat"), data: storedSettings{Selected: "deepseek", Profiles: map[string]storedProfile{}}}
 	if _, err := os.Stat(s.path); err == nil {
 		data, err := readProtected(s.path)
 		if err != nil || json.Unmarshal(data, &s.data) != nil || s.data.Profiles == nil {
