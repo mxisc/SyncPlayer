@@ -2,7 +2,7 @@ param([string]$Version = '1.0.0')
 $ErrorActionPreference = 'Stop'
 $repoRoot = $PSScriptRoot
 $releaseName = "SyncPlayer-$Version-windows-x64"
-$output = Join-Path $repoRoot "dist/$releaseName-portable.zip"
+$output = Join-Path $repoRoot "dist/$releaseName.zip"
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a numeric release version.' }
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem

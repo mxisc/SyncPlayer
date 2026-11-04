@@ -14,7 +14,7 @@ Windows 视频与 Funscript 播放器，支持本地播放、DeoVR Classic 远�
 
 需要 Windows x64、WebView2 Runtime；使用蓝牙连接时，电脑需要可用的蓝牙适配器。
 
-从 [Releases](https://github.com/mxisc/SyncPlayer/releases/latest) 下载 `SyncPlayer-<版本>-windows-x64-portable.zip`，完整解压后双击目录顶层的 `SyncPlayer.exe`。绿色版无需安装，不写注册表；请勿直接在压缩包预览窗口中运行，也不要单独移动 EXE。
+从 [Releases](https://github.com/mxisc/SyncPlayer/releases/latest) 下载 `SyncPlayer-<版本>-windows-x64.zip`，完整解压后双击目录顶层的 `SyncPlayer.exe`。绿色版无需安装，不写注册表；请勿直接在压缩包预览窗口中运行，也不要单独移动 EXE。
 
 设置、日志和字幕缓存保存在解压目录中。升级时可将旧版目录中的 `settings` 复制到新版本目录；如需彻底移除程序，退出后删除整个目录即可。
 
@@ -78,4 +78,4 @@ Movies/
 ./package.ps1 -Version 1.0.1
 ```
 
-输出为 `dist/SyncPlayer-<版本>-windows-x64-portable.zip`。压缩包内置必要运行依赖和语音模型，顶层可直接运行 `SyncPlayer.exe`，不包含个人设置、密钥、日志或字幕缓存。
+输出为 `dist/SyncPlayer-<版本>-windows-x64.zip`。压缩包内置必要运行依赖和语音模型，顶层可直接运行 `SyncPlayer.exe`，不包含个人设置、密钥、日志或字幕缓存。
