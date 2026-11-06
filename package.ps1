@@ -26,7 +26,7 @@ $files = [ordered]@{
  'runtime/licenses/MPV-LICENSE.GPL' = 'runtime/licenses/MPV-LICENSE.GPL'
  'README.md' = 'README.md'
  'NATIVE-DEPENDENCIES.md' = 'NATIVE-DEPENDENCIES.md'
-)
+}
 
 $cpuBackends = @(Get-ChildItem (Join-Path $repoRoot 'runtime/whisper/ggml-cpu-*.dll') -File)
 if ($cpuBackends.Count -eq 0) { throw 'Missing Whisper CPU backend: runtime/whisper/ggml-cpu-*.dll' }
