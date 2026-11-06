@@ -24,6 +24,7 @@ import (
 )
 
 type App struct {
+	fullscreenRestore fullscreenWindowRestore
 	ctx               context.Context
 	device            *device.Controller
 	handy             *handy.Client
@@ -594,11 +595,7 @@ func (a *App) PlaybackSubtitle(text string) error {
 	return a.player.Subtitle(text)
 }
 func (a *App) PlaybackFullscreen(full bool) {
-	if full {
-		wr.WindowFullscreen(a.ctx)
-	} else {
-		wr.WindowUnfullscreen(a.ctx)
-	}
+	a.setPlaybackFullscreen(full)
 }
 
 func (a *App) PlaybackCursorHidden(hidden bool) { a.player.CursorHidden(hidden) }
