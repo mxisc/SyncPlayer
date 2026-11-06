@@ -114,7 +114,7 @@ func (a *App) PlaybackPointerState() map[string]any {
 	info.Size = uint32(unsafe.Sizeof(info))
 	valid, _, _ = user.NewProc("GetGUIThreadInfo").Call(0, uintptr(unsafe.Pointer(&info)))
 	result["native_focus"] = active && valid != 0 && a.player.OwnsWindow(info.Focus)
-	for name, key := range map[string]uintptr{"left": 1, "space": 0x20, "escape": 0x1B, "fullscreen_key": 0x46} {
+	for name, key := range map[string]uintptr{"left": 1, "space": 0x20, "escape": 0x1B, "fullscreen_key": 0x46, "arrow_left": 0x25, "arrow_right": 0x27} {
 		state, _, _ := user.NewProc("GetAsyncKeyState").Call(key)
 		result[name] = active && state&0x8001 != 0
 	}

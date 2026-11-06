@@ -3,6 +3,7 @@ package subtitles
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 
 	"encoding/json"
 	"errors"
@@ -110,19 +111,21 @@ func (s *Service) Start(key, language string, position int64, lowSpeech bool) er
 	if err := checkNativeRuntime(s.root); err != nil {
 		return err
 	}
-	info, err := os.Stat(s.path)
+	cachePath, legacy, err := s.cacheFilesLocked(profile, language, lowSpeech)
 	if err != nil {
-		return errors.New("媒体文件无法读取")
+		return err
 	}
-	fingerprintText := fmt.Sprintf("native-v1|%s|%d|%d|%s|small|%s|%s|%s|json=%t|low=%t", s.path, info.Size(), info.ModTime().UnixNano(), language, profile.Provider, profile.BaseURL, profile.Model, profile.JSONMode, lowSpeech)
-	fingerprint := sha256.Sum256([]byte(fingerprintText))
-	dir := filepath.Join(s.dataDir, "subtitle-cache")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return errors.New("无法创建字幕缓存")
-	}
-	s.cachePath = filepath.Join(dir, fmt.Sprintf("%x.json", fingerprint))
+	s.cachePath = cachePath
 	s.cache = cache{}
-	if data, err := os.ReadFile(s.cachePath); err == nil {
+	data, err := os.ReadFile(cachePath)
+	if os.IsNotExist(err) {
+		if old, readErr := os.ReadFile(legacy); readErr == nil && json.Unmarshal(old, &s.cache) == nil {
+			// Promote the existing cache without asking the translation service again.
+			if err := os.WriteFile(cachePath, old, 0600); err != nil {
+				return errors.New("无法保存字幕缓存")
+			}
+		}
+	} else if err == nil {
 		_ = json.Unmarshal(data, &s.cache)
 	}
 	s.key = profile.Key
@@ -131,6 +134,59 @@ func (s *Service) Start(key, language string, position int64, lowSpeech bool) er
 	s.lowSpeech = lowSpeech
 	s.position = position
 	s.startJobLocked(position)
+	return nil
+}
+
+func (s *Service) cacheFilesLocked(profile storedProfile, language string, lowSpeech bool) (string, string, error) {
+	info, err := os.Stat(s.path)
+	if err != nil {
+		return "", "", errors.New("媒体文件无法读取")
+	}
+	dir := filepath.Join(s.dataDir, "subtitle-cache")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", "", errors.New("无法创建字幕缓存")
+	}
+	pathFor := func(identity string) string {
+		return filepath.Join(dir, fmt.Sprintf("%x.json", sha256.Sum256([]byte(identity))))
+	}
+	media := pathFor(fmt.Sprintf("media-v1|%s|%d|%d", s.path, info.Size(), info.ModTime().UnixNano()))
+	legacy := pathFor(fmt.Sprintf("native-v4|%s|%d|%d|%s|small|%s|%s|%s|json=%t|low=%t", s.path, info.Size(), info.ModTime().UnixNano(), language, profile.Provider, profile.BaseURL, profile.Model, profile.JSONMode, lowSpeech))
+	return media, legacy, nil
+}
+
+func (s *Service) ResetCache() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dir := filepath.Join(s.dataDir, "subtitle-cache")
+	files, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return errors.New("无法读取字幕缓存目录")
+	}
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+	s.generation++
+	s.key = ""
+	s.cache = cache{}
+	s.state = State{Message: "所有字幕缓存已重置", Cues: []Cue{}}
+	failed := false
+	for _, file := range files {
+		name := file.Name()
+		hash, ok := strings.CutSuffix(strings.TrimSuffix(name, ".tmp"), ".json")
+		if file.IsDir() || !ok || len(hash) != sha256.Size*2 {
+			continue
+		}
+		if _, err := hex.DecodeString(hash); err != nil {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			failed = true
+		}
+	}
+	if failed {
+		return errors.New("部分字幕缓存无法删除，请稍后重试")
+	}
 	return nil
 }
 func (s *Service) coveredLocked(position int64) bool {
@@ -189,12 +245,16 @@ func (s *Service) update(generation uint64, message string, running bool) {
 	s.state.Message = message
 	s.state.Running = running
 }
-func (s *Service) awaitBudget(ctx context.Context, end int64) bool {
+
+// Bound how far ahead a new recognition chunk may start.
+const subtitleLookaheadMS = 60_000
+
+func (s *Service) awaitBudget(ctx context.Context, target int64) bool {
 	for {
 		s.mu.Lock()
 		position := s.position
 		s.mu.Unlock()
-		if end <= position+60000 {
+		if target <= position+subtitleLookaheadMS {
 			return true
 		}
 		select {
@@ -253,18 +313,7 @@ func (s *Service) run(ctx context.Context, generation uint64, path string, profi
 				return
 			}
 			if !cached {
-				for _, cue := range event.Cues {
-					duplicate := false
-					for _, old := range s.cache.Cues {
-						if cue.StartMS < old.EndMS && cue.EndMS > old.StartMS && (cue.Original == old.Original || cue.StartMS < event.StartMS+1000) {
-							duplicate = true
-							break
-						}
-					}
-					if !duplicate {
-						s.cache.Cues = append(s.cache.Cues, cue)
-					}
-				}
+				s.cache.Cues = mergeSubtitleCues(s.cache.Cues, event.Cues, event.StartMS)
 				s.cache.Ranges = append(s.cache.Ranges, [2]int64{event.StartMS, event.EndMS})
 				sort.Slice(s.cache.Cues, func(i, j int) bool { return s.cache.Cues[i].StartMS < s.cache.Cues[j].StartMS })
 			}

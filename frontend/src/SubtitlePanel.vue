@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {ref,computed,watch,onMounted,onBeforeUnmount,nextTick} from 'vue';
+import {displaySubtitleCues} from './subtitleDisplay';
 const props=defineProps<{time:number;source:string;audioOnly:boolean}>();
 const emit=defineEmits<{caption:[text:{original:string;translation:string}];picker:[open:boolean]}>();
 type Cue={start_ms:number;end_ms:number;original:string;translation:string};
@@ -7,7 +8,7 @@ type State={running:boolean;message:string;processed_ms:number;cues:Cue[]};
 type Provider={id:string;name:string;base_url:string};
 type Profile={provider:string;base_url:string;model:string;json_mode:boolean;has_key:boolean;model_selected:boolean};
 type Settings={selected:string;providers:Provider[];profiles:Profile[]};
-type API={FetchAIModels:(provider:string)=>Promise<string[]>;AISettings:()=>Promise<Settings>;SaveAIProfile:(profile:Profile,key:string)=>Promise<Settings>;DeleteAIKey:(provider:string)=>Promise<Settings>;PlaybackSubtitle:(text:string)=>Promise<void>;StartSubtitles:(key:string,language:string,time:number,lowSpeech:boolean)=>Promise<void>;StopSubtitles:()=>Promise<void>;SubtitleState:(time:number)=>Promise<State>};
+type API={FetchAIModels:(provider:string)=>Promise<string[]>;AISettings:()=>Promise<Settings>;SaveAIProfile:(profile:Profile,key:string)=>Promise<Settings>;DeleteAIKey:(provider:string)=>Promise<Settings>;PlaybackSubtitle:(text:string)=>Promise<void>;StartSubtitles:(key:string,language:string,time:number,lowSpeech:boolean)=>Promise<void>;StopSubtitles:()=>Promise<void>;ResetSubtitleCache:()=>Promise<void>;SubtitleState:(time:number)=>Promise<State>};
 const api=()=>(window as unknown as {go:{main:{App:API}}}).go.main.App;
 const savedKey=ref(false),lowSpeech=ref(true),configReady=ref(false);
 const providers=ref<Provider[]>([]),profiles=ref<Profile[]>([]),provider=ref('deepseek'),baseURL=ref(''),model=ref('');
@@ -43,11 +44,21 @@ async function changeEnabled(){
   }catch(error){if(turn===generation){enabled.value=false;message.value=String(error);}}
   finally{if(turn===generation){busy.value=false;refreshTrack();}}
 }
+async function resetSubtitleCache(){
+ if(busy.value)return;
+ const turn=++generation;busy.value=true;
+ try{
+  await api().ResetSubtitleCache();
+  if(turn!==generation)return;
+  enabled.value=false;cues=[];processed.value=0;clearTrack();message.value='所有字幕缓存已重置';
+ }catch(error){if(turn===generation)message.value=String(error)}
+ finally{if(turn===generation)busy.value=false}
+}
 async function saveKey(){await fetchModels()}
 async function deleteKey(){busy.value=true;try{const selected=provider.value;const settings=await api().DeleteAIKey(selected);profiles.value=settings.profiles;chooseProvider();message.value='Key 已删除'}catch(error){message.value=String(error)}finally{busy.value=false}}
 async function readState(){
   if(!enabled.value||reading)return;reading=true;const turn=generation;
-  try{const state=await api().SubtitleState(Math.max(0,props.time));if(turn!==generation)return;cues=state.cues||[];processed.value=state.processed_ms;message.value=state.message;refreshTrack();}
+  try{const state=await api().SubtitleState(Math.max(0,props.time));if(turn!==generation)return;cues=displaySubtitleCues(state.cues||[]);processed.value=state.processed_ms;message.value=state.message;refreshTrack();}
   catch(error){if(turn===generation)message.value=String(error);}
   finally{reading=false;}
 }
@@ -70,6 +81,7 @@ onBeforeUnmount(()=>{closeModels();generation++;window.clearInterval(timer);clea
     <div class="key-actions"><button :disabled="enabled||busy||!configReady||!baseURL.trim()||modelLoading||(!key.trim()&&!savedKey)" @click="saveKey">{{modelLoading?'获取中…':'获取模型'}}</button><button v-if="savedKey" :disabled="enabled||busy" @click="deleteKey">删除密钥</button></div>
     <label class="field">原文语言<select v-model="language" :disabled="enabled||busy"><option value="">自动识别</option><option value="ja">日语</option><option value="en">英语</option><option value="zh">中文</option></select></label>
     <div class="channel-switches"><label>低语增强<input type="checkbox" role="switch" v-model="lowSpeech" :disabled="enabled||busy"></label><label>中文字幕<input type="checkbox" role="switch" v-model="enabled" :disabled="!source||busy||modelLoading||!configReady||!model" @change="changeEnabled"></label><label>双语字幕<input type="checkbox" role="switch" v-model="bilingual"></label></div>
+    <button :disabled="busy||modelLoading" title="清除所有媒体的字幕缓存" @click="resetSubtitleCache">重置字幕缓存</button>
     <div v-if="message" class="subtitle-status" role="status">{{message}}</div>
   </section>
   <Teleport to="body"><dialog ref="modelDialog" class="model-dialog" @cancel.prevent="closeModels">

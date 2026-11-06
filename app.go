@@ -24,29 +24,31 @@ import (
 )
 
 type App struct {
-	fullscreenRestore fullscreenWindowRestore
-	ctx               context.Context
-	device            *device.Controller
-	handy             *handy.Client
-	deviceMode        string
-	mu                sync.Mutex
-	script            script.Script
-	media             *media.Server
-	lastCycle         int
-	cycleUntil        time.Time
-	fastOutput        bool
-	subtitles         *subtitles.Service
-	player            *player.Player
-	deo               *deovr.Client
-	playbackMode      string
-	audioOnly         bool
-	mediaLoaded       bool
-	libraryOpen       bool
-	deoScriptSource   string
-	library           *library.Store
-	deoConnectionMode string
-	deoAutoCancel     context.CancelFunc
-	deoAutoDone       chan struct{}
+	seekToastMu         sync.Mutex
+	seekToastGeneration uint64
+	fullscreenRestore   fullscreenWindowRestore
+	ctx                 context.Context
+	device              *device.Controller
+	handy               *handy.Client
+	deviceMode          string
+	mu                  sync.Mutex
+	script              script.Script
+	media               *media.Server
+	lastCycle           int
+	cycleUntil          time.Time
+	fastOutput          bool
+	subtitles           *subtitles.Service
+	player              *player.Player
+	deo                 *deovr.Client
+	playbackMode        string
+	audioOnly           bool
+	mediaLoaded         bool
+	libraryOpen         bool
+	deoScriptSource     string
+	library             *library.Store
+	deoConnectionMode   string
+	deoAutoCancel       context.CancelFunc
+	deoAutoDone         chan struct{}
 }
 
 func NewApp() (*App, error) {
@@ -594,6 +596,33 @@ func (a *App) PlaybackSubtitle(text string) error {
 	}
 	return a.player.Subtitle(text)
 }
+
+func (a *App) PlaybackSeekToast(forward bool) error {
+	if a.isDeo() {
+		return nil
+	}
+	a.seekToastMu.Lock()
+	defer a.seekToastMu.Unlock()
+	a.seekToastGeneration++
+	generation := a.seekToastGeneration
+	icon := `m 12 0 l 0 8 12 16 m 25 0 l 13 8 25 16`
+	if forward {
+		icon = `m 0 0 l 12 8 0 16 m 13 0 l 25 8 13 16`
+	}
+	const id = 41
+	// Anchor both drawings by their top-left corners on the same canvas.
+	box := `{\an7\pos(607,338)\p1\bord1\shad0\1c&H1D1410&\1a&H55&\3c&HFFFFFF&\3a&HC0&}m 0 0 l 66 0 66 44 0 44`
+	symbol := `{\an7\pos(627.5,352)\p1\bord0\shad0\1c&HFFFFFF&\1a&H00&}` + icon
+	err := a.player.Command("osd-overlay", id, "ass-events", box+"\n"+symbol, 1280, 720)
+	time.AfterFunc(850*time.Millisecond, func() {
+		a.seekToastMu.Lock()
+		defer a.seekToastMu.Unlock()
+		if generation == a.seekToastGeneration {
+			_ = a.player.Command("osd-overlay", id, "none", "")
+		}
+	})
+	return err
+}
 func (a *App) PlaybackFullscreen(full bool) {
 	a.setPlaybackFullscreen(full)
 }
@@ -617,6 +646,7 @@ func (a *App) DeleteAIKey(provider string) (subtitles.AISettings, error) {
 	return a.subtitles.DeleteAIKey(provider)
 }
 func (a *App) StopSubtitles()                               { a.subtitles.Stop() }
+func (a *App) ResetSubtitleCache() error                    { return a.subtitles.ResetCache() }
 func (a *App) SubtitleState(position int64) subtitles.State { return a.subtitles.Snapshot(position) }
 
 type PlaybackSnapshot struct {

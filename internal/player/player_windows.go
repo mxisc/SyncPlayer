@@ -198,7 +198,7 @@ func (p *Player) ensure() error {
 		return errors.New("缺少 mpv 播放内核")
 	}
 	pipe := fmt.Sprintf(`\\.\pipe\syncplayer-mpv-%d-%d`, os.Getpid(), time.Now().UnixNano())
-	cmd := exec.Command(binary, "--no-config", "--idle=yes", "--keep-open=yes", "--force-window=yes", "--pause=yes", "--terminal=no", "--osc=no", "--cursor-autohide=no", "--input-default-bindings=no", "--input-vo-keyboard=no", "--hwdec=auto-safe", "--vo=gpu", "--gpu-api=d3d11", "--gpu-context=d3d11", fmt.Sprintf("--wid=%d", uint32(child)), "--input-ipc-server="+pipe)
+	cmd := exec.Command(binary, "--no-config", "--idle=yes", "--keep-open=yes", "--force-window=yes", "--pause=yes", "--terminal=no", "--osc=no", "--osd-align-x=center", "--osd-align-y=center", "--cursor-autohide=no", "--input-default-bindings=no", "--input-vo-keyboard=no", "--hwdec=auto-safe", "--vo=gpu", "--gpu-api=d3d11", "--gpu-context=d3d11", fmt.Sprintf("--wid=%d", uint32(child)), "--input-ipc-server="+pipe)
 	cmd.Args = append(cmd.Args, "--sub-font=Microsoft YaHei", "--sub-font-size=36", "--sub-color=#F1F4FA", "--sub-border-color=#101722", "--sub-border-size=1.5", "--sub-shadow-offset=1", "--sub-margin-y=36")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	if e := cmd.Start(); e != nil {
